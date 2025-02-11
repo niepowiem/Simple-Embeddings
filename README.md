@@ -7,3 +7,9 @@ A lightweight library for quickly generating embeddings without training a neura
 - PMI Calculation: Measures statistical association between words.
 - SVD for Dimensionality Reduction: Converts high-dimensional word relationships into compact embedding representations.
 - Embedding Lookup: Converts sentences into a sequence of embeddings.
+
+# Prerequisites
+- Python 3.9.13
+- Required Packages:
+  - numpy 2.0.2
+  - tqdm 4.67.1
