@@ -13,3 +13,11 @@ A lightweight library for quickly generating embeddings without training a neura
 - Required Packages:
   - numpy 2.0.2
   - tqdm 4.67.1
+
+# Usage
+## 1. Tokenization
+- The simple_tokenizer function tokenizes input text:
+  ```python
+  data = "This is an example sentence."
+  tokens = simple_tokenizer(data)
+  print(tokens)
