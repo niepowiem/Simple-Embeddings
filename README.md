@@ -16,8 +16,28 @@ A lightweight library for quickly generating embeddings without training a neura
 
 # Usage
 ## 1. Tokenization
-- The simple_tokenizer function tokenizes input text:
+The `simple_tokenizer` function tokenizes input text:
   ```python
-  data = "This is an example sentence."
+  data = ["This is an example sentence.", "Testing, testing, one, two, three."]
   tokens = simple_tokenizer(data)
   print(tokens)
+  ```
+## 2. Generating Embeddings
+The `EmbeddingData` class generates word embeddings:
+```python
+embeddings = EmbeddingData()
+embeddings.calculate(tokens, smoothing=3e-4, d_model=128, window_size=3)
+```
+
+## 3. Embedding a Sentence
+The `embed_sequence` function converts a sentence into an embedding sequence:
+```python
+sentence = "hello world"
+embedded_sentence = embed_sequence(sentence, embed_dataset=embeddinngs.embeddings)
+print(embedded_sentence)
+```
+**WARNING:** It won't work with words out of the scope
+
+# Near Future Updates
+- Adding Better Tokenizer
+- Out Of Vocabulary Handling
