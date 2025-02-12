@@ -40,4 +40,5 @@ print(embedded_sentence)
 
 # Near Future Updates
 - Adding Better Tokenizer
+- Word Normalization
 - Out Of Vocabulary Handling
