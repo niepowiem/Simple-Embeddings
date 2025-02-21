@@ -6,6 +6,7 @@ A lightweight library for quickly generating embeddings without training a neura
 - Co-occurrence Matrix: Captures word context relationships within a given window size.
 - PMI Calculation: Measures statistical association between words.
 - SVD for Dimensionality Reduction: Converts high-dimensional word relationships into compact embedding representations.
+- OOV Handling: BPE
 - Embedding Lookup: Converts sentences into a sequence of embeddings.
 
 # Prerequisites
@@ -61,6 +62,14 @@ print(embed_sequence(tokenize('He's learning how to run', vocabulary=bpa.vocabul
 ```
 
 **WARNING:** It won't work with chars not contained in the bpe vocabulary!
+
+# History
+- 1.1.0:
+    - Added BPE
+    - Renamed `simple_tokenizer` to `pre_tokenizer`
+    - Added `tokenizer`
+    - Adjusted Standard Variables
+- 1.0.0 Initial Commit
 
 # Near Future Updates
 - Adding Better Tokenizer
