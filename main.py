@@ -1,184 +1,306 @@
 import re
-import string
-from collections import defaultdict
+
+from collections import deque, Counter
+from itertools import chain, pairwise
 
 from tqdm import tqdm
 import numpy as np
 
-def pre_tokenizer(data, *, token_size=255, forbidden_chars=string.punctuation):
+def pre_tokenizer(data: tuple[str], *, token_size: int = 255, forbidden_chars: str = '', lowercase: bool = False,
+                  flattened: bool = True, tupled: bool = True):
     """
     Tokenizes input data into smaller chunks of specified size, removing specific characters.
 
     Args:
-        data (str or list of str): The input text or list of texts to tokenize.
-        token_size (int, optional): The maximum size of each token chunk. Default is 255.
-        forbidden_chars (str, optional): Characters to be replaced with spaces. Default is punctuation.
+        data (tuple of str): The input text or list of texts to tokenize.
+        token_size (int, optional): Maximum size of each token chunk. Default is 255.
+        forbidden_chars (str, optional): Characters to replace with spaces. Default is punctuation.
+        lowercase (bool, optional): If True, lowercases the text. Default is True.
+        flattened (bool, optional): If True, returns a flat iterator of tokens; otherwise,
+                               returns a generator for each text's token list.
+        tupled (bool, optional): If True, converts chain object to tuple if flattened
 
     Returns:
-        list: Nested list structure where:
-            - Outer list: Input texts
-            - Middle list: Words in text (split by whitespace)
-            - Inner list: Character chunks for each word (if word length > token_size)
-
-    Process Flow:
-        1. Handle both single string and list inputs
-        2. Convert to lowercase and remove forbidden characters
-        3. Split text into words using whitespace
-        4. Split long words into chunks of specified size
+        An iterator of tokens if flat=True (itertools.chain), or a generator of token lists (one per text).
     """
-    tokens = [
-        [
-            # Split word into chunks if it's longer than token_size
-            [token[i:i + token_size] for i in range(0, len(token), token_size)]
-            if len(token) > token_size else token  # Keep short words as-is
 
-            # Process each word: lower-case + remove forbidden chars + split by whitespace
-            for token in text.lower().translate(
-            str.maketrans(forbidden_chars, ' ' * len(forbidden_chars))
-        ).split()
-        ]
-        # Handle both single text and list of texts
-        for text in (data if isinstance(data, list) else [data])
-    ]
+    texts = data if isinstance(data, tuple) else tuple([data])
 
-    return tokens
+    if len(forbidden_chars) > 0:
+        translator = str.maketrans(forbidden_chars, ' ' * len(forbidden_chars))
+        texts = [text.translate(translator) for text in texts]
 
-def tokenize(data, *, vocabulary=None):
-    """Convert text into vocabulary tokens using regex pattern matching
+    if lowercase:
+        texts = [text.lower() for text in texts]
 
-    Args:
-        data (str or list): Input text(s) to tokenize
-        vocabulary (dict): Mapping of tokens to indices
+    def tokenize_each_word(word):
+        """Yield token chunks for a word if longer than token_size; otherwise, yield the word."""
+        if len(word) > token_size:
+            for i in range(0, len(word), token_size):
+                yield word[i:i + token_size]
+        else:
+            yield word
 
-    Returns:
-        list: List of token lists (for each input text)
+    def split_sequence(text):
+        """Process a single text: clean, split, and tokenize each word."""
+        for word in text.split(' '):
+            yield from tokenize_each_word(word)
 
-    Process Flow:
-        1. Create regex pattern sorted by descending token length
-        2. Match longest possible tokens first
-        3. Split text into vocabulary tokens using regex
-    """
-    if not vocabulary:
-        raise Exception("No vocabulary passed!")
-
-    # Create regex pattern matching longest tokens first to prevent partial matches
-    # Escape special characters and sort by descending length
-    pattern = '|'.join(sorted(
-        map(re.escape, vocabulary.keys()),
-        key=len,
-        reverse=True  # Critical for longest-match-first strategy
-    ))
-
-    # Find all matching tokens in lowercase text
-    return [
-        re.findall(pattern, text.lower())
-        for text in (data if isinstance(data, list) else [data])
-    ]
+    if flattened:
+        # Return a flattened iterator (itertools.chain object) over tokens from all texts.
+        if tupled:
+            return tuple(chain.from_iterable(split_sequence(text) for text in texts))
+        return chain.from_iterable(split_sequence(text) for text in texts)
+    else:
+        # Return a generator of token lists for each text.
+        return (tuple(split_sequence(text)) for text in texts)
 
 class BytePairEncoder:
+    """Byte Pair Encoding (BPE) tokenizer that learns merges from a corpus.
+
+    The encoder can be initialized with raw text (split into characters) or pre-tokenized text.
+    It learns merge rules up to a specified maximum and builds a vocabulary.
+
+    Attributes:
+        vocabulary (Dict[str, int]): Mapping of tokens to unique integer IDs.
+        regex (Optional[Pattern]): Compiled regex for tokenization.
+        max_merges (int): Maximum number of merge operations during training.
+        min_frequency (int): Minimum frequency for merging token pairs.
+        pre_tokenized_corpus (Optional[Iterable[str]]): Corpus as pre-split tokens.
     """
-        Initialize the Byte Pair Encoder with a pre-tokenized corpus and configuration parameters.
 
-        Parameters:
-            pre_tokenized_corpus (list): A nested list structure where:
-                - Outer list: Sentences
-                - Middle list: Words per sentence
-                - Inner list: Characters/subword tokens per word
-            num_merges (int): Number of merge operations to perform during training
-            min_frequency (int): Minimum frequency required to perform a merge
-    """
+    def __init__(self, *, corpus: (str, list, tuple, set) = None, pre_tokenized_corpus: (list, tuple, set) = None,
+                 max_merges: int = 127, min_frequency=2, vocabulary: (dict, iter) = None, regex: str = None) -> None:
+        """Initializes BPE encoder with training data and configuration.
 
-    def __init__(self, pre_tokenized_corpus, *, num_merges=10, min_frequency=2):
+        Args:
+            corpus: Raw text input(s) to be split into individual characters.
+                Example: ["hello world"] becomes ['h','e','l','l','o',' ','w','o','r','l','d']
+            pre_tokenized_corpus: Pre-split tokens that bypass character splitting.
+                Takes precedence over `corpus` if both are provided.
+            max_merges: Maximum number of merge operations to learn during training.
+                Controls vocabulary size growth.
+            min_frequency: Frequency threshold for merging token pairs.
+                Pairs occurring less than this will not be merged.
+            vocabulary: Optional pre-existing vocabulary. Can be either:
+                - Dict: {token: id} mapping
+                - Iterable: Token list/set (auto-assigns IDs)
+            regex: Pre-compiled regex pattern string for tokenization.
+                If provided, skips vocabulary initialization and training.
+
+        Raises:
+            ValueError: If no valid initialization data provided (corpus,
+                pre_tokenized_corpus, vocabulary, or regex).
+
+        Note:
+            - Vocabulary initialization order is non-deterministic when using sets
+            - Provide either raw text (corpus) or pre-tokenized data, not both
+            - Regex pattern takes precedence over all other initialization methods
         """
-        Initialize the Byte Pair Encoder with a pre-tokenized corpus and configuration parameters.
 
-        Parameters:
-            pre_tokenized_corpus (list): A nested list structure where:
-                - Outer list: Sentences
-                - Middle list: Words per sentence
-                - Inner list: Characters/subword tokens per word
-            num_merges (int): Number of merge operations to perform during training
-            min_frequency (int): Minimum frequency required to perform a merge
-        """
-        self.tokenized_corpus = pre_tokenized_corpus
-        self.num_merges = num_merges
+        self.pre_tokenized_corpus = pre_tokenized_corpus
+        self.vocabulary = vocabulary
+
+        self.max_merges = max_merges
         self.min_frequency = min_frequency
+        self.regex = regex
 
-        # Initialize vocabulary with unique characters from the corpus
-        self.vocabulary = {word: i for i, word in enumerate(sorted(set(token for sublist in pre_tokenized_corpus for tokens in sublist for token in tokens)))}
-        print(self.vocabulary)
-    def train(self):
-        """Execute the BPE training process with specified number of merges"""
-        # Use tqdm for progress visualization during merges
-        merge_progressbar = tqdm(range(self.num_merges), desc="Creating Byte Pair Encoder Merges")
+        if isinstance(regex, str):
+            return
 
-        # Create merges for num_merges
-        for _ in range(self.num_merges):
-            # 1. Find all adjacent pairs and their counts/positions
-            pairs = self.make_pairs()
+        if self.check_for_vocabulary():
+            self.build_tokenizer()
+            return
 
-            if not pairs:
-                break  # Stop early if no merges possible
+        if not self.check_for_corpus(corpus):
+            raise Exception('Must provide either corpus, pre_tokenized_corpus, vocabulary, or regex')
 
-            # 2. Select pair with the highest count (using tuple comparison for tie-breaker)
-            most_frequent_pair = max(
-                pairs,
-                key=lambda x: (pairs[x]['count'], x)  # Prefer lex order for ties
-            )
+        # Initialize vocabulary with unique tokens (order depends on Python's set iteration)
+        self.vocabulary = {token: idx for idx, token in enumerate(set(self.pre_tokenized_corpus))}
 
-            # 3. Check minimum frequency threshold
-            if pairs[most_frequent_pair]['count'] < self.min_frequency:
-                break
+        self.train()
 
-            # 4. Create new token and add to vocabulary
-            new_token = ''.join(most_frequent_pair)
-            self.vocabulary[new_token] = len(self.vocabulary)
+    def check_for_vocabulary(self) -> bool:
+        """Process and validate any provided vocabulary.
 
-            # 5. Update corpus by merging selected pairs
-            self.update_tokenized_corpus(pairs, most_frequent_pair)
-
-            merge_progressbar.update(1)
-        merge_progressbar.close()
-
-    def make_pairs(self):
-        """
-        Identify all adjacent symbol pairs and track their positions
+        Handles both dictionary and iterable vocabulary formats.
+        Builds tokenizer if valid vocabulary found.
 
         Returns:
-            defaultdict: Dictionary mapping pairs to their counts and positions
+            bool: True if vocabulary was processed, False otherwise
         """
-        pairs = defaultdict(lambda: {'count': 0, 'pair_ids': []})
 
-        # Three-level iteration: sentence -> word -> character position
-        for sentence_id, sentence in enumerate(self.tokenized_corpus):
-            for word_id, word in enumerate(sentence):
-                # Iterate through adjacent character pairs
-                for char_id in range(len(word) - 1):
-                    pair = (word[char_id], word[char_id + 1])
+        if self.vocabulary is not None:
+            if isinstance(self.vocabulary, dict):
+                return True
 
-                    # Record occurrence and position
-                    pairs[pair]['count'] += 1
-                    pairs[pair]['pair_ids'].append((sentence_id, word_id, char_id))
+            elif isinstance(self.vocabulary, (list, tuple, set)):
+                self.vocabulary = {key: value for value, key in enumerate(self.vocabulary)}
 
-        return pairs
+                return True
 
-    def update_tokenized_corpus(self, pairs, most_frequent_pair):
+        return False
+
+    def check_for_corpus(self, corpus: (str, list, tuple, set)=None) -> bool:
+        """Process and validate text corpus inputs.
+
+         Prioritizes pre_tokenized_corpus if available. Processes raw text by
+         splitting into individual characters when needed.
+
+         Args:
+             corpus: Raw text input(s) to process
+
+         Returns:
+             bool: True if valid corpus data processed, False otherwise
+         """
+
+        if isinstance(self.pre_tokenized_corpus, (list, tuple, set)):
+            self.pre_tokenized_corpus = list(self.pre_tokenized_corpus)
+            return True
+
+        elif isinstance(corpus, (list, tuple, set)):
+            self.pre_tokenized_corpus = list(chain(*corpus))  # Flattens and splits raw text into chars
+            return True
+
+        elif isinstance(corpus, str):
+            if ' ' in corpus:
+                corpus = corpus.split(' ')
+
+            self.pre_tokenized_corpus = list(chain(*corpus))  # Flattens and splits raw text into chars
+            return True
+
+        return False
+
+    def train(self) -> None:
+        """Performs BPE training by iteratively merging frequent pairs."""
+        if not self.vocabulary:
+            raise Exception(
+                'No corpus was given. Please include a corpus -> BytePairEncoder(corpus=str) or BytePairEncoder(pre_tokenized_corpus=iter)')
+
+        vocab_size = len(self.vocabulary)
+        merge_progressbar = tqdm(range(self.max_merges), desc="Creating BPE Merges")
+
+        for _ in range(self.max_merges):
+            # Count all consecutive token pairs
+            pairs = Counter(pairwise(chain(self.pre_tokenized_corpus)))
+            if not pairs:
+                break
+
+            # Get most frequent pair
+            most_frequent_pair, frequency = pairs.most_common(1)[0]
+
+            if frequency < self.min_frequency:
+                break  # Early stopping
+
+            # Create new token and update vocabulary
+            new_token = most_frequent_pair[0] + most_frequent_pair[1]
+            self.vocabulary[new_token] = vocab_size
+            vocab_size += 1
+
+            # Replace all occurrences of the pair in the corpus
+            self.update_corpus(most_frequent_pair, new_token)
+            merge_progressbar.update(1)
+
+        merge_progressbar.close()
+
+        self.build_tokenizer()
+
+    def build_tokenizer(self) -> None:
+        """Compiles tokenization regex, prioritizing longer tokens first."""
+        tokens = sorted(self.vocabulary.keys(), key=lambda x: (-len(x), x))  # Length then lex order
+        escaped = [re.escape(token) for token in tokens]
+        self.regex = re.compile(f"{'|'.join(escaped)}")
+
+    def tokenize(self, corpus: (str, list, tuple, set) = None) -> tuple:
+        """Tokenizes input text using learned BPE merges.
+
+        Args:
+            corpus: String or iterable of strings to tokenize
+
+        Returns:
+            List of token lists (one per input string)
         """
-        Merge occurrences of a specific pair throughout the corpus
+        if isinstance(corpus, str):
+            corpus = [corpus]
 
-        Parameters:
-            pairs (dict): Full pair data from make_pairs()
-            most_frequent_pair (tuple): The pair to merge
-        """
-        # Process all recorded positions for the target pair
-        for position in pairs[most_frequent_pair]['pair_ids']:
-            sentence_id, word_id, char_id = position
-            word = self.tokenized_corpus[sentence_id][word_id]
+        return tuple(self.regex.findall(sentence) for sentence in corpus)
 
-            # Replace first element with merged pair
-            word[char_id] = ''.join(most_frequent_pair)
-            # Remove second element of the pair
-            word.pop(char_id + 1)
+    def update_corpus(self, pattern_to_replace: tuple, replace_with: str) -> None:
+        """Replaces all instances of a token pair with merged token (in-place)."""
+        idx = 0
+        while idx < len(self.pre_tokenized_corpus) - 1:
+            current_token, next_token = self.pre_tokenized_corpus[idx], self.pre_tokenized_corpus[idx + 1]
+            if current_token == pattern_to_replace[0] and next_token == pattern_to_replace[1]:
+                self.pre_tokenized_corpus[idx] = replace_with
+                self.pre_tokenized_corpus.pop(idx + 1)
+            else:
+                idx += 1
+
+    def __str__(self) -> str:
+        """User-friendly string representation of vocabulary."""
+        return f"BytePairEncoder with {len(self.vocabulary)} tokens\nTokens: {list(self.vocabulary.keys())}" if self.vocabulary else "Untrained BytePairEncoder"
+
+    def __repr__(self) -> str:
+        """Technical string representation for debugging."""
+        return (
+            f"BytePairEncoder(\n"
+            f"  token_count={len(self.vocabulary)},\n"
+            f"  tokens={list(self.vocabulary.keys())[:10]}...\n"
+            f"  max_merges={self.max_merges},\n"
+            f"  min_frequency={self.min_frequency}\n"
+            f"  pre_tokenized_corpus_length={len(self.pre_tokenized_corpus)}\n"
+            f"  pre_tokenized_corpus={self.pre_tokenized_corpus[:10]}...\n)"
+        )
+
+    def __add__(self, other: (BytePairEncoder, dict, list, tuple, set)) -> BytePairEncoder:
+        """Combines vocabularies of two encoders (token IDs from right encoder take precedence)."""
+        if isinstance(other, BytePairEncoder):
+            return BytePairEncoder(vocabulary={**self.vocabulary, **other.vocabulary},
+                                   pre_tokenized_corpus=self.pre_tokenized_corpus,
+                                   min_frequency=self.min_frequency,
+                                   max_merges=self.max_merges)
+
+        elif isinstance(other, dict):
+            return BytePairEncoder(
+                vocabulary={**self.vocabulary,
+                            **{token: len(self.vocabulary) + i for i, token in other if token not in self.vocabulary}},
+                pre_tokenized_corpus=self.pre_tokenized_corpus,
+                min_frequency=self.min_frequency,
+                max_merges=self.max_merges)
+
+        elif isinstance(other, (dict, list, tuple, set)):
+            return BytePairEncoder(
+                vocabulary={**self.vocabulary,
+                            **{token: len(self.vocabulary) + i for i, token in enumerate(other) if token not in self.vocabulary}},
+                pre_tokenized_corpus=self.pre_tokenized_corpus,
+                min_frequency=self.min_frequency,
+                max_merges=self.max_merges)
+
+        raise TypeError(f"Can only merge with iterable or BytePairEncoder, got {type(other)}")
+
+    def __sub__(self, other: (BytePairEncoder, dict, list, tuple, set)) -> BytePairEncoder:
+        """Creates new encoder with tokens present in self but not in other."""
+        if isinstance(other, BytePairEncoder):
+            return BytePairEncoder(vocabulary={k: v for k, v in self.vocabulary.items() if k not in other.vocabulary},
+                                   pre_tokenized_corpus=self.pre_tokenized_corpus,
+                                   min_frequency=self.min_frequency,
+                                   max_merges=self.max_merges)
+
+        elif isinstance(other, dict):
+            return BytePairEncoder(
+                vocabulary={key: value for key, value in self.vocabulary.items() if key not in other},
+                pre_tokenized_corpus=self.pre_tokenized_corpus,
+                min_frequency=self.min_frequency,
+                max_merges=self.max_merges)
+
+        elif isinstance(other, (dict, list, tuple, set)):
+            return BytePairEncoder(
+                vocabulary={key: value for key, value in self.vocabulary.items() if key not in other},
+                pre_tokenized_corpus=self.pre_tokenized_corpus,
+                min_frequency=self.min_frequency,
+                max_merges=self.max_merges)
+
+        raise TypeError(f"Can only subtract iterable or BytePairEncoder, got {type(other)}")
 
 class EmbeddingData:
     """
