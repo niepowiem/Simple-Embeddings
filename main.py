@@ -257,7 +257,7 @@ class BytePairEncoder:
             f"  pre_tokenized_corpus={self.pre_tokenized_corpus[:10]}...\n)"
         )
 
-    def __add__(self, other: Self | dict | list | tuple | set) -> BytePairEncoder:
+    def __add__(self, other: Self | dict | list | tuple | set) -> Self:
         """Combines vocabularies of two encoders (token IDs from right encoder take precedence)."""
         if isinstance(other, BytePairEncoder):
             return BytePairEncoder(vocabulary={**self.vocabulary, **other.vocabulary},
@@ -283,7 +283,7 @@ class BytePairEncoder:
 
         raise TypeError(f"Can only merge with iterable or BytePairEncoder, got {type(other)}")
 
-    def __sub__(self, other: Self | dict | list | tuple | set) -> BytePairEncoder:
+    def __sub__(self, other: Self | dict | list | tuple | set) -> Self:
         """Creates new encoder with tokens present in self but not in other."""
         if isinstance(other, BytePairEncoder):
             return BytePairEncoder(vocabulary={k: v for k, v in self.vocabulary.items() if k not in other.vocabulary},
