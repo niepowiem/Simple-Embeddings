@@ -75,7 +75,7 @@ class BytePairEncoder:
     """
 
     def __init__(self, *, corpus: str | list | tuple | set = None, pre_tokenized_corpus: list | tuple | set = None,
-                 max_merges: int = 127, min_frequency=2, vocabulary: dict | iter = None, regex: str = None) -> None:
+                 max_merges: int = 127, min_frequency=2, vocabulary: dict | list | tuple | set = None, regex: str = None) -> None:
         """Initializes BPE encoder with training data and configuration.
 
         Args:
