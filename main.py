@@ -1,30 +1,35 @@
 import re
 
-from collections import deque, Counter
+from collections import Counter
 from itertools import chain, pairwise
+from typing import Self
 
 from tqdm import tqdm
 import numpy as np
 
-def pre_tokenizer(data: tuple[str], *, token_size: int = 255, forbidden_chars: str = '', lowercase: bool = False,
+def pre_tokenizer(data: str | list[str] | tuple[str], *, token_size: int = 255, forbidden_chars: str = '', lowercase: bool = False,
                   flattened: bool = True, tupled: bool = True):
     """
     Tokenizes input data into smaller chunks of specified size, removing specific characters.
 
     Args:
-        data (tuple of str): The input text or list of texts to tokenize.
+        data (str, list of str, tuple of str): The input text or collection of texts to tokenize.
         token_size (int, optional): Maximum size of each token chunk. Default is 255.
-        forbidden_chars (str, optional): Characters to replace with spaces. Default is punctuation.
-        lowercase (bool, optional): If True, lowercases the text. Default is True.
+        forbidden_chars (str, optional): Characters to replace with spaces. Default is empty.
+        lowercase (bool, optional): If True, lowercases the text. Default is False.
         flattened (bool, optional): If True, returns a flat iterator of tokens; otherwise,
-                               returns a generator for each text's token list.
-        tupled (bool, optional): If True, converts chain object to tuple if flattened
+                                   returns a generator for each text's token list.
+        tupled (bool, optional): If True, converts chain object to tuple if flattened.
 
     Returns:
         An iterator of tokens if flat=True (itertools.chain), or a generator of token lists (one per text).
     """
 
-    texts = data if isinstance(data, tuple) else tuple([data])
+    # Normalize input to handle str, list, or tuple uniformly
+    if isinstance(data, (list, tuple)):
+        texts = tuple(data)
+    else:
+        texts = (data,)
 
     if len(forbidden_chars) > 0:
         translator = str.maketrans(forbidden_chars, ' ' * len(forbidden_chars))
@@ -69,8 +74,8 @@ class BytePairEncoder:
         pre_tokenized_corpus (Optional[Iterable[str]]): Corpus as pre-split tokens.
     """
 
-    def __init__(self, *, corpus: (str, list, tuple, set) = None, pre_tokenized_corpus: (list, tuple, set) = None,
-                 max_merges: int = 127, min_frequency=2, vocabulary: (dict, iter) = None, regex: str = None) -> None:
+    def __init__(self, *, corpus: str | list | tuple | set = None, pre_tokenized_corpus: list | tuple | set = None,
+                 max_merges: int = 127, min_frequency=2, vocabulary: dict | iter = None, regex: str = None) -> None:
         """Initializes BPE encoder with training data and configuration.
 
         Args:
@@ -141,7 +146,7 @@ class BytePairEncoder:
 
         return False
 
-    def check_for_corpus(self, corpus: (str, list, tuple, set)=None) -> bool:
+    def check_for_corpus(self, corpus: str | list | tuple | set =None) -> bool:
         """Process and validate text corpus inputs.
 
          Prioritizes pre_tokenized_corpus if available. Processes raw text by
@@ -211,7 +216,7 @@ class BytePairEncoder:
         escaped = [re.escape(token) for token in tokens]
         self.regex = re.compile(f"{'|'.join(escaped)}")
 
-    def tokenize(self, corpus: (str, list, tuple, set) = None) -> tuple:
+    def tokenize(self, corpus: str | list | tuple | set = None) -> tuple:
         """Tokenizes input text using learned BPE merges.
 
         Args:
@@ -252,7 +257,7 @@ class BytePairEncoder:
             f"  pre_tokenized_corpus={self.pre_tokenized_corpus[:10]}...\n)"
         )
 
-    def __add__(self, other: (BytePairEncoder, dict, list, tuple, set)) -> BytePairEncoder:
+    def __add__(self, other: Self | dict | list | tuple | set) -> BytePairEncoder:
         """Combines vocabularies of two encoders (token IDs from right encoder take precedence)."""
         if isinstance(other, BytePairEncoder):
             return BytePairEncoder(vocabulary={**self.vocabulary, **other.vocabulary},
@@ -278,7 +283,7 @@ class BytePairEncoder:
 
         raise TypeError(f"Can only merge with iterable or BytePairEncoder, got {type(other)}")
 
-    def __sub__(self, other: (BytePairEncoder, dict, list, tuple, set)) -> BytePairEncoder:
+    def __sub__(self, other: Self | dict | list | tuple | set) -> BytePairEncoder:
         """Creates new encoder with tokens present in self but not in other."""
         if isinstance(other, BytePairEncoder):
             return BytePairEncoder(vocabulary={k: v for k, v in self.vocabulary.items() if k not in other.vocabulary},
