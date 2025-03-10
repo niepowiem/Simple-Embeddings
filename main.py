@@ -8,7 +8,7 @@ from tqdm import tqdm
 import numpy as np
 
 def pre_tokenizer(data: str | list[str] | tuple[str], *, token_size: int = 255, forbidden_chars: str = '', lowercase: bool = False,
-                  flattened: bool = True, tupled: bool = True):
+                  flattened: bool = False, output_type: type = None):
     """
     Tokenizes input data into smaller chunks of specified size, removing specific characters.
 
@@ -19,7 +19,7 @@ def pre_tokenizer(data: str | list[str] | tuple[str], *, token_size: int = 255, 
         lowercase (bool, optional): If True, lowercases the text. Default is False.
         flattened (bool, optional): If True, returns a flat iterator of tokens; otherwise,
                                    returns a generator for each text's token list.
-        tupled (bool, optional): If True, converts chain object to tuple if flattened.
+        output_type (type, optional): converts chain object into given type.
 
     Returns:
         An iterator of tokens if flat=True (itertools.chain), or a generator of token lists (one per text).
@@ -53,12 +53,17 @@ def pre_tokenizer(data: str | list[str] | tuple[str], *, token_size: int = 255, 
 
     if flattened:
         # Return a flattened iterator (itertools.chain object) over tokens from all texts.
-        if tupled:
-            return tuple(chain.from_iterable(split_sequence(text) for text in texts))
-        return chain.from_iterable(split_sequence(text) for text in texts)
+        tokenized_sequence = chain.from_iterable(split_sequence(text) for text in texts)
     else:
         # Return a generator of token lists for each text.
-        return (tuple(split_sequence(text)) for text in texts)
+        inner_type = tuple if not output_type else output_type
+        tokenized_sequence = (inner_type(split_sequence(text)) for text in texts)
+
+    if output_type:
+        # Returns tokens in a given type. For example tuple
+        return output_type(tokenized_sequence)
+
+    return tokenized_sequence
 
 class BytePairEncoder:
     """Byte Pair Encoding (BPE) tokenizer that learns merges from a corpus.
@@ -327,6 +332,8 @@ class EmbeddingData:
 
     def __init__(self, *, embeddings = None, vocabulary = None):
         # Initializing empty placeholders for vocabulary and embeddings
+        self.d_model = None
+
         self.embeddings = embeddings
         self.vocabulary = vocabulary
         self.reversedVocabulary = dict(zip(vocabulary.values(), vocabulary.keys())) if type(vocabulary) is None else None
@@ -335,6 +342,9 @@ class EmbeddingData:
     def calculate(self, tokenized_dataset=None, *, window_size=1,
                   pmi=True, smoothing: float = 3e-4, from_zero=False,
                   d_model=128):
+
+        # Step 0: Save d_model variable
+        self.d_model = d_model
 
         # Step 1: Calculate the co-occurrence matrix from the dataset
         com_matrix = self.co_occurrence_matrix(tokenized_dataset, window_size=window_size)
@@ -429,38 +439,13 @@ class EmbeddingData:
         # Return the reduced representation as the final embedding
         return np.dot(u_reduced, sigma_reduced)
 
-def embed_sequence(tokens, *, embed_dataset=None, max_sequence=12, d_model=128):
-    """
-    Tokenizes input sentence into smaller chunks (tokens), retrieves embeddings for each token from a provided dataset,
-    and returns a padded list of embeddings. If any token is not found in the dataset, an error is raised.
+    def embed_sequence(self, tokenized_sequences: list | tuple | set, *, context: int = 0):
+        # Tokenizes input sentence into smaller chunks (tokens),
+        # retrieves embeddings for each token from self.embeddings variable,
+        # and returns a list of embeddings.
+        embed = [self.embeddings[token] for sequence in tokenized_sequences for token in sequence]
 
-    Args:
-        tokens (list of lists or list of lists of lists): Tokenized sentence
-        embed_dataset (dict, optional): A dictionary mapping tokens to their corresponding embeddings.
-        max_sequence (int, optional): The maximum length of the sequence to return (default is 12).
-        d_model (int, optional): The dimensionality of the embedding vector (default is 128).
-
-    Returns:
-        list or None: A list of embeddings corresponding to the tokenized sentence, padded to the specified maximum sequence length,
-                        or None if an unknown token is encountered.
-
-    1. It then attempts to retrieve embeddings for each token from the provided `embed_dataset`.
-    2. If the number of embeddings is less than `max_sequence`, zero vectors are used to pad the result.
-    3. If any token is not found in the `embed_dataset`, the function prints an error message and returns `None`.
-    4. The final embedding list has a length equal to `max_sequence`, with each element being a vector of length `d_model`.
-    """
-
-    try:
-        # Attempt to retrieve embeddings for each token in the tokenized sentence
-        # If there are fewer tokens than the maximum allowed sequence length, pad the embeddings with zeros
-        embed = [embed_dataset[token] for token in tokens[0]]
-        embed += [[0] * d_model] * (max_sequence - len(embed))
+        if context > 0:
+            embed += [[0] * self.d_model] * (context - len(embed))
 
         return embed
-
-    except KeyError:
-
-        # In case of an unknown token (not in embed_dataset), print an error message
-        print(f"Unknown token has occurred in: {tokens}")
-
-    return None
