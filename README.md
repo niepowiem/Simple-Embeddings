@@ -24,46 +24,54 @@ The `simple_tokenizer` function tokenizes input text:
   tokens = pre_tokenizer(data)
   print(tokens)
   ```
+
 ## 2. Generating Embeddings
 The `EmbeddingData` class generates word embeddings:
 ```python
 data = ["This is an example sentence.", "Testing, testing, one, two, three."]
-tokens = pre_tokenizer(data)
+tokens = pre_tokenizer(data, output_type=list)
 
 embeddings = EmbeddingData()
 embeddings.calculate(tokens, smoothing=3e-4, d_model=128, window_size=3)
 ```
 
-**WARNING:** It won't work with words out of the scope
-
 ## 3. Embedding a Sentence
 The `embed_sequence` function converts a sentence into an embedding sequence:
 ```python
-data = "This is an example sentence."
-tokens = pre_tokenizer(data)
+data = ["This is an example sentence.", "Testing, testing, one, two, three."]
+tokens = pre_tokenizer(data, output_type=list)
 
-embedded_sentence = embed_sequence(tokens, embed_dataset=embeddinngs.embeddings)
-print(embedded_sentence)
+embeddings = EmbeddingData()
+embeddings.calculate(tokens, smoothing=3e-4, d_model=128, window_size=3)
+    
+# Embedding a sentence
+data = "This is an example sentence."
+tokens = pre_tokenizer(data, output_type=list)
+
+embedded_sentence = embeddings.embed_sequence(tokens)
 ```
 **WARNING:** It won't work with words out of the scope
 
 ## 3. OOV Handling - Byte Pair Encoder
 The `BytePairEncoder` class allows for oov handling:
 ```python
-data = ['He is fast as lightning', 'I'm learning how to run as fast as him']
+data = ['He is fast as lightning', "I'm learning how to run as fast as him"]
 
-bytePairEncoder = BytePairEncoder(pre_tokenizer(data, token_size=1))
-bytePairEncoder.train()
+bpe = BytePairEncoder(corpus=data)
 
-embeddings = EmbeddingData(vocabulary=bpa.vocabulary)
-embeddings.calculate(tokenize(data, vocabulary=bpa.vocabulary))
+embeddings = EmbeddingData(vocabulary=bpe.vocabulary)
+embeddings.calculate(bpe.tokenize(data), smoothing=3e-4, d_model=128, window_size=3)
 
-print(embed_sequence(tokenize('He's learning how to run', vocabulary=bpa.vocabulary), embed_dataset=emb.embeddings)
+embedded_sequence = embeddings.embed_sequence(bpe.tokenize("He's learning how to run"))
 ```
 
-**WARNING:** It won't work with chars not contained in the bpe vocabulary!
-
 # History
+- 1.1.1:
+    - Optimized BPE. Up to 60% faster than the previous version
+    - Added dunder methods to BPE
+    - Updated the pre_tokenizer
+    - removed `tokenizer`
+    - moved `embed_sequence` to `EmbeddingData`
 - 1.1.0:
     - Added BPE
     - Renamed `simple_tokenizer` to `pre_tokenizer`
@@ -72,7 +80,8 @@ print(embed_sequence(tokenize('He's learning how to run', vocabulary=bpa.vocabul
 - 1.0.0 Initial Commit
 
 # Near Future Updates
-- Adding Better Tokenizer
 - Word Normalization
 - Out Of Vocabulary Handling
   - Byte Pair Encoder ✅
+  - Word Piece
+  - Unigram
