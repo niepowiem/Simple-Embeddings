@@ -80,7 +80,8 @@ class BytePairEncoder:
     """
 
     def __init__(self, *, corpus: str | list | tuple | set = None, pre_tokenized_corpus: list | tuple | set = None,
-                 max_merges: int = 127, min_frequency=2, vocabulary: dict | list | tuple | set = None, regex: str = None) -> None:
+                 max_merges: int = 127, min_frequency=2, vocabulary: dict | list | tuple | set = None, regex: str = None,
+                 white_space: bool=True) -> None:
         """Initializes BPE encoder with training data and configuration.
 
         Args:
@@ -97,6 +98,7 @@ class BytePairEncoder:
                 - Iterable: Token list/set (auto-assigns IDs)
             regex: Pre-compiled regex pattern string for tokenization.
                 If provided, skips vocabulary initialization and training.
+            white_space: Whether to parse text with " " or not
 
         Raises:
             ValueError: If no valid initialization data provided (corpus,
@@ -114,6 +116,8 @@ class BytePairEncoder:
         self.max_merges = max_merges
         self.min_frequency = min_frequency
         self.regex = regex
+
+        self.white_space = white_space
 
         if isinstance(regex, str):
             return
@@ -151,7 +155,7 @@ class BytePairEncoder:
 
         return False
 
-    def check_for_corpus(self, corpus: str | list | tuple | set =None) -> bool:
+    def check_for_corpus(self, corpus: str | list | tuple | set=None) -> bool:
         """Process and validate text corpus inputs.
 
          Prioritizes pre_tokenized_corpus if available. Processes raw text by
@@ -169,12 +173,22 @@ class BytePairEncoder:
             return True
 
         elif isinstance(corpus, (list, tuple, set)):
+            if not self.white_space:
+                idx: int = 0
+
+                while idx < len(corpus):
+                    if ' ' in corpus[idx]:
+                        corpus[idx] = corpus[idx].replace(' ', '')
+
+                    idx += 1
+
             self.pre_tokenized_corpus = list(chain(*corpus))  # Flattens and splits raw text into chars
             return True
 
         elif isinstance(corpus, str):
-            if ' ' in corpus:
-                corpus = corpus.split(' ')
+            if not self.white_space:
+                if ' ' in corpus:
+                    corpus = corpus.split(' ')
 
             self.pre_tokenized_corpus = list(chain(*corpus))  # Flattens and splits raw text into chars
             return True
@@ -449,3 +463,13 @@ class EmbeddingData:
             embed += [[0] * self.d_model] * (context - len(embed))
 
         return embed
+
+data = ['He is fast as lightning', "I'm learning how to run as fast as him"]
+
+bpe = BytePairEncoder(corpus=data, white_space=True)
+print(bpe.vocabulary)
+
+#embeddings = EmbeddingData(vocabulary=bpe.vocabulary)
+#embeddings.calculate(data, smoothing=3e-4, d_model=128, window_size=3)
+
+#embedded_sequence = embeddings.embed_sequence(bpe.tokenize("He's learning how to run"))
