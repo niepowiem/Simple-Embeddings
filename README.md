@@ -65,7 +65,22 @@ embeddings.calculate(bpe.tokenize(data), smoothing=3e-4, d_model=128, window_siz
 embedded_sequence = embeddings.embed_sequence(bpe.tokenize("He's learning how to run"))
 ```
 
+## 4. OOV Handling - Word Piece
+The `WordPiece` class allows for oov handling:
+```python
+data = ['He is fast as lightning', "I'm learning how to run as fast as him"]
+
+wp = WordPiece(corpus=data)
+
+embeddings = EmbeddingData(vocabulary=wp.vocabulary)
+embeddings.calculate(wp.tokenize(data), smoothing=3e-4, d_model=128, window_size=3)
+
+embedded_sequence = embeddings.embed_sequence(wp.tokenize("He's learning how to run"))
+```
+
 # History
+- 1.1.2:
+    - Added WordPiece  
 - 1.1.1:
     - Optimized BPE. Up to 60% faster than the previous version
     - Added dunder methods to BPE
@@ -83,5 +98,5 @@ embedded_sequence = embeddings.embed_sequence(bpe.tokenize("He's learning how to
 - Word Normalization
 - Out Of Vocabulary Handling
   - Byte Pair Encoder ✅
-  - Word Piece
+  - Word Piece ✅
   - Unigram
