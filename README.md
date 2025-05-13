@@ -6,7 +6,7 @@ A lightweight library for quickly generating embeddings without training a neura
 - Co-occurrence Matrix: Captures word context relationships within a given window size.
 - PMI Calculation: Measures statistical association between words.
 - SVD for Dimensionality Reduction: Converts high-dimensional word relationships into compact embedding representations.
-- OOV Handling: BPE
+- OOV Handling: BPE, WordPiece
 - Embedding Lookup: Converts sentences into a sequence of embeddings.
 
 # Prerequisites
