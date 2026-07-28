@@ -1,3 +1,9 @@
+# Do NOT Use!
+This repo has been revieved and deemed unworthy of You. 
+It contains a lot of - both numerical and logical - errors. Feel free to use the new repo 'EasyNeurons' that includes everything covered here and more! 
+
+https://github.com/niepowiem/EasyNeurons
+
 # Simple-Embeddings
 A lightweight library for quickly generating embeddings without training a neural network or using pre-trained models. It leverages simple techniques like tokenization, co-occurrence matrices, Pointwise Mutual Information (PMI), and Singular Value Decomposition (SVD) to create meaningful embeddings.
 
