@@ -1,5 +1,5 @@
 # Do NOT Use!
-This repo has been revieved and deemed unworthy of You. 
+This repo has been reviewed and deemed unworthy of You. 
 It contains a lot of - both numerical and logical - errors. Feel free to use the new repo 'EasyNeurons' that is correct and includes everything covered here and much more! 
 
 https://github.com/niepowiem/EasyNeurons
